@@ -4,6 +4,7 @@ import math
 import platform
 import random
 import time
+import hashlib
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from functools import partial
@@ -293,8 +294,13 @@ class AmazonPhotos:
         return self.query('type:(VIDEOS)', **kwargs)
 
     @staticmethod
-    def _md5(p):
-        return p, md5(p.read_bytes()).hexdigest()
+    def _md5(p, block_size=65536): # Support for very large files (prevents memory issues)
+        md5_hash = hashlib.md5()
+        with p.open('rb') as f:
+            for block in iter(lambda: f.read(block_size), b''):
+                md5_hash.update(block)
+        return p, md5_hash.hexdigest()
+        
 
     def dedup_files(self, path: str | Path, md5s: set[str], max_workers=psutil.cpu_count(logical=False) // 2) -> list[Path]:
         """
@@ -355,6 +361,7 @@ class AmazonPhotos:
                                 'kind': 'FILE',
                                 # 'parents': [pid], # careful, official docs are wrong again
                                 'parentNodeId': pid,
+                                'conflictResolution': 'RENAME', # avoid skipping images with the same filename
                             }
                         )
 
